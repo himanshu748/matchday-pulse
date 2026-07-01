@@ -1,138 +1,112 @@
 # Matchday Pulse
 
-A starter scaffold for **Matchday Pulse**, a fan-experience companion app for
-the TxODDS World Cup Hackathon (Consumer & Fan Experiences track). Built with
-Next.js 14 (App Router), TypeScript, Tailwind CSS, and Solana wallet-adapter.
+**Live World Cup moments → on-chain-verified, gas-free collectibles on Solana.**
 
-Every goal, red card, penalty, or match-defining event turns into a
-shareable **Big Moment Card**, collectible as a gas-free compressed NFT on
-Solana. A **Live Pulse** meter tracks match hype, and a **prediction
-mini-game** lets fans call the next event for fun (no wagering).
+Matchday Pulse is a fan-experience app for the **TxODDS × Solana World Cup Hackathon**
+(Consumer & Fan Experiences track). It streams the **real TxLINE** World Cup feed:
+every goal, card, and penalty becomes a shareable **Big Moment Card** that is
 
-This is a **starter scaffold**, not a finished product — it's meant to be
-handed off to a developer (or another Claude Code session) to keep building.
+- **provably real** — each moment carries a TxLINE **Merkle proof anchored to Solana**
+  ("✓ Verified on-chain"), not invented data, and
+- **collectible** — mintable as a **gas-free Metaplex Bubblegum compressed NFT**
+  (the fan's wallet is only the recipient; the app pays), viewable in a wallet gallery.
+
+Plus a **Live Pulse** hype meter and a **prediction mini-game** played against the real feed.
+
+> TxLINE is the **primary data input**: the feed, the verification badges, and the
+> minted cards' metadata all derive from live TxLINE World Cup data.
 
 ---
 
-## What's mocked vs. what's real
+## How it works
+
+```
+TxLINE (devnet, free World Cup tier)
+  guest JWT ──► on-chain subscribe() ──► activate ──► X-Api-Token
+        │
+        ▼  (server holds the token; browser never sees it)
+  /api/feed/[fixtureId]  ── SSE relay, normalizes Scores → MatchEvent
+  /api/fixtures          ── live World Cup fixtures
+  /api/verify/[id]/[seq] ── Merkle-proof "verified on-chain" badge
+        │
+        ▼
+  Big Moment Card ──► /api/mint ──► Bubblegum V2 cNFT (server-signed, gas-free)
+                                     └─ /api/metadata + /api/card-image (the card IS the NFT art)
+        ▼
+  /api/assets (DAS) ──► "Your Big Moments" gallery
+```
 
 | Piece | Status | Where |
 |---|---|---|
-| Next.js/Tailwind app shell, routing, layout | **Real** | `app/`, `components/` |
-| Solana wallet connect (Phantom/Solflare, devnet) | **Real** | `components/SolanaProvider.tsx`, `components/WalletConnectButton.tsx` |
-| Match event feed | **Mocked** — fake `MatchEvent`s emitted on an interval | `lib/mockFeed.ts` |
-| Big Moment Card UI | **Real** UI, rendering mock or (eventually) real events | `components/BigMomentCard.tsx` |
-| Live Pulse meter | **Real** client-side UI, driven by event *count* (not real fan reactions) | `components/LivePulse.tsx` |
-| Compressed NFT minting | **Stubbed** — returns a fake asset id after a simulated delay, does not touch Solana | `lib/mintCard.ts` |
-| Prediction mini-game | **Real** client-side game logic against the mock feed, in-memory only | `app/predict/page.tsx` |
-| Leaderboard | **Mocked** — hardcoded array, not persisted anywhere | `app/predict/page.tsx` |
-
-Nothing in this repo talks to the real TxODDS feed, a real backend, or the
-Solana network for minting. Wallet *connection* is real (devnet), but
-*minting* is not.
+| TxLINE live feed (SSE relay + poll fallback) | **Real** | `app/api/feed/*`, `lib/txline/*` |
+| On-chain Merkle-proof verification badge | **Real** | `app/api/verify/*`, `components/BigMomentCard.tsx` |
+| Compressed-NFT minting (Bubblegum V2, gas-free) | **Real** | `app/api/mint/*`, `lib/umi.ts`, `scripts/create-tree.mjs` |
+| cNFT gallery (DAS `getAssetsByOwner`) | **Real** (needs Helius key) | `app/api/assets/*`, `components/CardGallery.tsx` |
+| Wallet connect (Phantom/Solflare, devnet) | **Real** | `components/SolanaProvider.tsx` |
+| Prediction game + leaderboard | Real game vs. real feed; leaderboard is mock | `app/predict/page.tsx` |
+| Mock feed | **Fallback only** (demo id / no live fixture) | `lib/mockFeed.ts` |
 
 ---
 
-## Running it
+## Setup
 
 ```bash
 npm install
-npm run dev
+cp .env.example .env.local
 ```
 
-Then open http://localhost:3000.
-
-- `/` — landing page
-- `/match/demo-1` — live match page: subscribes to the mock feed, renders
-  incoming Big Moment Cards, and shows the Live Pulse meter
-- `/predict` — prediction mini-game + mock leaderboard
-
-To build for production:
+**1. Get real TxLINE access + service keypair (devnet, free):**
 
 ```bash
-npm run build
-npm run start
+node scripts/txline-subscribe.mjs
 ```
 
-No environment variables are required to run the mock version. See
-`.env.example` for the variables the *real* integrations will need.
+This generates a devnet service keypair, airdrops SOL, sends the on-chain
+`subscribe()` (free World Cup tier — no TxL payment), activates the API token,
+discovers the World Cup `competitionId`, and writes everything to `.env.local`.
+If the devnet faucet is rate-limited, fund the printed address at
+<https://faucet.solana.com/> (devnet) and re-run.
+
+**2. Create the Bubblegum tree (once):**
+
+```bash
+node scripts/create-tree.mjs   # writes MERKLE_TREE_ADDRESS
+```
+
+**3. (Optional) Gallery read-back:** add a free `HELIUS_API_KEY` from
+<https://helius.dev> to `.env.local` so `/collection` can list minted cNFTs
+(the default devnet RPC can't serve DAS queries).
+
+**4. Run:**
+
+```bash
+npm run dev      # http://localhost:3000
+```
+
+- `/` — live World Cup fixtures (from TxLINE)
+- `/match/[fixtureId]` — live Big Moments + verification badges + Live Pulse + mint
+- `/predict` — prediction mini-game against the real feed
+- `/collection` — your minted cNFTs
+
+Without TxLINE credentials the app still runs: it falls back to a simulated feed
+and disables real minting, so it never hard-fails during a demo.
 
 ---
 
-## What needs to be wired in next
+## Environment
 
-This scaffold intentionally stops short of the real integrations. In rough
-priority order:
+See `.env.example`. Secrets (`TXLINE_SERVICE_SECRET`, `TXLINE_JWT`,
+`TXLINE_API_TOKEN`) live only in `.env.local` (gitignored) and are used
+**server-side only** — they never reach the browser bundle.
 
-1. **Real TxODDS feed** (`lib/mockFeed.ts` → real client)
-   - Get the WebSocket URL + auth mechanism from TxODDS once API access is
-     granted; put them in `.env` as `TXODDS_WS_URL` / `TXODDS_API_KEY`
-     (see `.env.example`).
-   - Because the browser can't hold TxODDS credentials, add a small backend
-     relay (Node service, or a Supabase Edge Function / Realtime channel)
-     that authenticates once server-side and re-broadcasts normalized
-     `MatchEvent`s to connected clients.
-   - Map the real TxODDS payload schema onto (or replace) the `MatchEvent`
-     type in `lib/types.ts` — field names there are a best guess.
-   - Keep the `subscribeToMatchFeed(matchId, onEvent)` function signature
-     stable so `app/match/[id]/page.tsx` doesn't need to change much.
+## Tech
 
-2. **Metaplex Bubblegum compressed-NFT minting** (`lib/mintCard.ts`)
-   - Full implementation plan is written inline as TODO comments in that
-     file: create a Merkle tree + optional collection NFT once, then mint
-     per-event via Bubblegum's `mintV1`/`mintToCollectionV1` from a
-     server-side route (never from the browser, since the tree
-     authority/fee-payer key must stay secret).
-   - Upload card metadata/image to Arweave/IPFS (e.g. via Irys or
-     NFT.Storage) before minting.
-   - Look up minted assets via the Metaplex DAS API (compressed NFTs don't
-     show up via plain `getAccountInfo`).
+Next.js 14 (App Router) · TypeScript · Tailwind · Solana wallet-adapter ·
+Metaplex UMI + Bubblegum V2 + DAS API · TxLINE (TxODDS) real-time feed.
 
-3. **Backend for Live Pulse aggregation**
-   - Currently the pulse meter just reacts to the *local* event feed. The
-     real product concept calls for aggregating actual fan taps/reactions
-     across all connected viewers, gas-free via compressed state.
-   - Supabase Realtime (broadcast or Postgres changes) is the leanest option
-     mentioned in the original concept doc — a `pulse_events` table plus a
-     realtime channel per match would let `LivePulse.tsx` subscribe to
-     server-aggregated values instead of local counts.
+## Deploy
 
-4. **Real leaderboard persistence** (`app/predict/page.tsx`)
-   - Replace `MOCK_LEADERBOARD` with a real table (Supabase Postgres is a
-     natural fit alongside the pulse aggregation backend) keyed by wallet
-     public key, storing points/correct-prediction counts.
-   - Persist each round's prediction + outcome so it can be settled
-     transparently against TxODDS' **TxLINE** on-chain audit trail, per the
-     hackathon concept ("settled transparently on-chain," not a money
-     market).
-   - Add an API route (e.g. `app/api/predictions/route.ts`) to record
-     predictions server-side instead of only in React state.
-
----
-
-## Project structure
-
-```
-matchday-pulse/
-├── app/
-│   ├── layout.tsx            # Root layout: SolanaProvider + Header
-│   ├── page.tsx              # Landing page
-│   ├── globals.css
-│   ├── match/[id]/page.tsx   # Live match page (mock feed + cards + pulse)
-│   └── predict/page.tsx      # Prediction mini-game + mock leaderboard
-├── components/
-│   ├── SolanaProvider.tsx    # Wallet-adapter context, devnet
-│   ├── WalletConnectButton.tsx
-│   ├── Header.tsx
-│   ├── BigMomentCard.tsx     # Shareable event card + stubbed mint button
-│   └── LivePulse.tsx         # Animated hype meter
-├── lib/
-│   ├── types.ts              # MatchEvent, LeaderboardEntry, etc.
-│   ├── mockFeed.ts           # Fake TxODDS-shaped event stream
-│   └── mintCard.ts           # Stubbed Bubblegum mint function + TODOs
-├── package.json
-├── tailwind.config.ts
-├── tsconfig.json
-├── next.config.mjs
-└── .env.example
-```
+Deployable to Vercel (Node.js runtime for the API routes). Set the same env
+vars in the Vercel project and point `NEXT_PUBLIC_APP_URL` at the deployed URL.
+Note: the SSE relay is bounded (~4 min) and the client auto-reconnects; the
+route also has a polling fallback that is robust on serverless.

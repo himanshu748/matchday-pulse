@@ -3,7 +3,8 @@
 import { use, useEffect, useState } from "react";
 import BigMomentCard from "@/components/BigMomentCard";
 import LivePulse from "@/components/LivePulse";
-import { subscribeToMatchFeed } from "@/lib/mockFeed";
+import CardGallery from "@/components/CardGallery";
+import { subscribeToMatchFeed, type FeedMode } from "@/lib/feed";
 import type { MatchEvent } from "@/lib/types";
 
 const MAX_FEED_LENGTH = 25;
@@ -22,23 +23,39 @@ export default function MatchPage({
   const matchId = resolvedParams.id;
 
   const [events, setEvents] = useState<MatchEvent[]>([]);
-  const [connected, setConnected] = useState(false);
+  const [mode, setMode] = useState<FeedMode>("connecting");
 
   useEffect(() => {
     setEvents([]);
-    setConnected(true);
+    setMode("connecting");
 
-    const subscription = subscribeToMatchFeed(matchId, (event) => {
-      setEvents((prev) => [event, ...prev].slice(0, MAX_FEED_LENGTH));
-    });
+    const subscription = subscribeToMatchFeed(
+      matchId,
+      (event) => {
+        setEvents((prev) => {
+          if (prev.some((e) => e.id === event.id)) return prev;
+          return [event, ...prev].slice(0, MAX_FEED_LENGTH);
+        });
+      },
+      { onStatus: setMode }
+    );
 
     return () => {
       subscription.unsubscribe();
-      setConnected(false);
     };
   }, [matchId]);
 
-  const latestScore = events[0]?.score;
+  const latest = events[0];
+  const latestScore = latest?.score;
+  const homeTeam = latest?.homeTeam;
+  const awayTeam = latest?.awayTeam;
+
+  const badge =
+    mode === "txline"
+      ? { text: "Live · TxLINE", cls: "border-pulse/40 text-pulse", dot: "bg-pulse" }
+      : mode === "mock"
+      ? { text: "Live · demo feed", cls: "border-amber-400/40 text-amber-300", dot: "bg-amber-400" }
+      : { text: "Connecting…", cls: "border-white/20 text-slate-400", dot: "bg-slate-500" };
 
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
@@ -48,21 +65,15 @@ export default function MatchPage({
             <p className="text-xs uppercase tracking-widest text-slate-400">
               Live match
             </p>
-            <h1 className="text-2xl font-bold">Match {matchId}</h1>
+            <h1 className="text-2xl font-bold">
+              {homeTeam && awayTeam ? `${homeTeam} vs ${awayTeam}` : `Match ${matchId}`}
+            </h1>
           </div>
           <span
-            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${
-              connected
-                ? "border-pulse/40 text-pulse"
-                : "border-white/20 text-slate-400"
-            }`}
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${badge.cls}`}
           >
-            <span
-              className={`h-2 w-2 rounded-full ${
-                connected ? "bg-pulse" : "bg-slate-500"
-              }`}
-            />
-            {connected ? "Live (mock feed)" : "Disconnected"}
+            <span className={`h-2 w-2 rounded-full ${badge.dot}`} />
+            {badge.text}
           </span>
         </div>
 
@@ -77,8 +88,9 @@ export default function MatchPage({
         <div className="flex flex-col gap-3">
           {events.length === 0 && (
             <p className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-slate-500">
-              Waiting for the first Big Moment&hellip; (mock events arrive
-              every few seconds)
+              {mode === "connecting"
+                ? "Connecting to the live feed…"
+                : "Waiting for the first Big Moment…"}
             </p>
           )}
           {events.map((event, i) => (
@@ -92,14 +104,24 @@ export default function MatchPage({
         <div className="rounded-2xl border border-white/10 bg-pitch-900/60 p-4 text-xs text-slate-400">
           <p className="font-semibold text-slate-200">About this feed</p>
           <p className="mt-1">
-            Events on this page come from{" "}
-            <code className="rounded bg-black/30 px-1 py-0.5">
-              lib/mockFeed.ts
-            </code>
-            , a fake generator standing in for the real TxODDS WebSocket feed
-            until API access is confirmed.
+            {mode === "txline" ? (
+              <>
+                Events are streamed live from the{" "}
+                <span className="text-pulse">TxLINE</span> World Cup feed and are
+                cryptographically verifiable on Solana.
+              </>
+            ) : mode === "mock" ? (
+              <>
+                Showing the built-in <span className="text-amber-300">demo feed</span>{" "}
+                (no live TxLINE fixture for this id). Open a real fixture from the
+                home page to see the live TxLINE stream.
+              </>
+            ) : (
+              "Connecting…"
+            )}
           </p>
         </div>
+        <CardGallery />
       </aside>
     </div>
   );

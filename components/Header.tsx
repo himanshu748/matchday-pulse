@@ -19,6 +19,9 @@ export default function Header() {
           <Link href="/predict" className="hover:text-white">
             Predict
           </Link>
+          <Link href="/collection" className="hover:text-white">
+            Collection
+          </Link>
         </nav>
 
         <WalletConnectButton />

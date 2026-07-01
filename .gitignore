@@ -16,6 +16,13 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
+.install*.log
+.lockonly.log
+.persisttest
+
+# scratch / probe
+.probe/
 
 # local env files
 .env*.local

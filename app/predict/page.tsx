@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { subscribeToMatchFeed } from "@/lib/mockFeed";
+import { subscribeToMatchFeed } from "@/lib/feed";
 import type { LeaderboardEntry, MatchEvent, MatchEventType } from "@/lib/types";
 
 /**
@@ -27,8 +27,12 @@ const PREDICTABLE_TYPES: MatchEventType[] = [
 const TYPE_LABEL: Record<MatchEventType, string> = {
   goal: "Goal",
   red_card: "Red Card",
+  yellow_card: "Yellow Card",
   penalty: "Penalty",
+  substitution: "Substitution",
   halftime: "Half Time",
+  fulltime: "Full Time",
+  kickoff: "Kick Off",
 };
 
 // Mock leaderboard data — no backend/persistence wired up yet.

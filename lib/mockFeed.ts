@@ -73,6 +73,9 @@ function buildEvent(matchId: string): MatchEvent {
     player: type === "halftime" ? undefined : pick(PLAYERS[team]),
     timestamp: new Date().toISOString(),
     score: { ...score },
+    source: "mock",
+    homeTeam: "Atlas FC",
+    awayTeam: "Coral Union",
   };
 
   return event;
