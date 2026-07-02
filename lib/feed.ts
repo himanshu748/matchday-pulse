@@ -3,14 +3,13 @@
 /**
  * feed.ts (client)
  * ---------------------------------------------------------------------------
- * The single feed entry point used by pages. It subscribes to the REAL
- * TxLINE-backed stream served by our own `/api/feed/[fixtureId]` route
- * (Server-Sent Events), and transparently falls back to the local mock feed
- * (lib/mockFeed.ts) if the real feed is unavailable — so demos never hard-fail.
+ * The single feed entry point used by pages. Real fixtures subscribe to the
+ * REAL TxLINE-backed stream served by `/api/feed/[fixtureId]` (SSE) — and
+ * NEVER show simulated events: if a match hasn't kicked off yet the feed
+ * reports `waiting` so the UI can render an honest pre-kickoff state.
  *
- * The public `subscribeToMatchFeed` signature matches the original mock so
- * page components barely change; an optional `onStatus` reports whether the
- * live data is real ("txline") or simulated ("mock").
+ * The simulated feed exists ONLY for explicit demo ids (`demo-*`), used by
+ * the labeled practice mode. It is never a silent fallback.
  */
 
 import type { MatchEvent } from "./types";
@@ -19,21 +18,25 @@ import {
   type MatchFeedSubscription,
 } from "./mockFeed";
 
-export type FeedMode = "connecting" | "txline" | "mock";
+export type FeedMode =
+  | "connecting" // opening the stream
+  | "txline"     // receiving real TxLINE events
+  | "waiting"    // stream healthy, no events yet (match not started / quiet)
+  | "error"      // feed unreachable
+  | "mock";      // explicit demo id only — simulated practice feed
+
 export type MatchFeedListener = (event: MatchEvent) => void;
 export type { MatchFeedSubscription } from "./mockFeed";
 
 export interface SubscribeOptions {
-  /** Reports the active data source so the UI can badge real-vs-simulated. */
+  /** Reports the active feed state so the UI can react honestly. */
   onStatus?: (mode: FeedMode) => void;
-  /** Force the mock feed (used by the demo match id). */
-  forceMock?: boolean;
-  /** ms to wait for the first real event before falling back to mock. */
-  fallbackAfterMs?: number;
+  /** ms with no events before reporting `waiting` (stream stays open). */
+  waitingAfterMs?: number;
 }
 
-/** A real TxLINE fixture id is numeric; "demo-*" ids use the mock. */
-function isRealFixtureId(matchId: string): boolean {
+/** A real TxLINE fixture id is numeric; `demo-*` ids run the practice feed. */
+export function isRealFixtureId(matchId: string): boolean {
   return /^\d+$/.test(matchId);
 }
 
@@ -46,37 +49,30 @@ export function subscribeToMatchFeed(
     typeof onStatusOrOptions === "function"
       ? { onStatus: onStatusOrOptions }
       : onStatusOrOptions ?? {};
-  const { onStatus, forceMock, fallbackAfterMs = 8000 } = options;
+  const { onStatus, waitingAfterMs = 6000 } = options;
 
-  // Mock path: demo ids, forced, or SSE unsupported (e.g. old browsers/SSR).
-  if (
-    forceMock ||
-    !isRealFixtureId(matchId) ||
-    typeof window === "undefined" ||
-    typeof EventSource === "undefined"
-  ) {
+  // Explicit demo/practice ids only — clearly labeled simulated events.
+  if (!isRealFixtureId(matchId)) {
     onStatus?.("mock");
     return subscribeToMockFeed(matchId, onEvent);
+  }
+
+  if (typeof window === "undefined" || typeof EventSource === "undefined") {
+    onStatus?.("error");
+    return { unsubscribe: () => {} };
   }
 
   onStatus?.("connecting");
 
   let es: EventSource | null = null;
-  let mockSub: MatchFeedSubscription | null = null;
   let gotRealEvent = false;
   let closed = false;
 
-  const startMock = () => {
-    if (closed || mockSub) return;
-    onStatus?.("mock");
-    mockSub = subscribeToMockFeed(matchId, onEvent);
-  };
-
-  // If no real event arrives promptly, assume the fixture isn't live and
-  // fall back so the page still shows activity.
-  const fallbackTimer = setTimeout(() => {
-    if (!gotRealEvent) startMock();
-  }, fallbackAfterMs);
+  // If the stream is healthy but silent (match not kicked off, or between
+  // moments on a quiet replay), tell the UI we're waiting — never simulate.
+  const waitingTimer = setTimeout(() => {
+    if (!gotRealEvent && !closed) onStatus?.("waiting");
+  }, waitingAfterMs);
 
   try {
     es = new EventSource(`/api/feed/${encodeURIComponent(matchId)}`);
@@ -86,35 +82,33 @@ export function subscribeToMatchFeed(
         const event = JSON.parse(e.data) as MatchEvent;
         if (!gotRealEvent) {
           gotRealEvent = true;
-          clearTimeout(fallbackTimer);
+          clearTimeout(waitingTimer);
           onStatus?.("txline");
         }
         onEvent(event);
       } catch {
-        /* ignore malformed keep-alive/comment frames */
+        /* ignore malformed frames */
       }
     };
     es.onerror = () => {
-      // Before any real event: treat as "feed unavailable" → mock fallback.
-      // After: let EventSource auto-reconnect.
-      if (!gotRealEvent) {
-        es?.close();
-        es = null;
-        clearTimeout(fallbackTimer);
-        startMock();
+      if (closed) return;
+      // EventSource auto-reconnects; only surface a hard error before any
+      // data has flowed AND the connection is fully closed.
+      if (!gotRealEvent && es?.readyState === EventSource.CLOSED) {
+        clearTimeout(waitingTimer);
+        onStatus?.("error");
       }
     };
   } catch {
-    clearTimeout(fallbackTimer);
-    startMock();
+    clearTimeout(waitingTimer);
+    onStatus?.("error");
   }
 
   return {
     unsubscribe: () => {
       closed = true;
-      clearTimeout(fallbackTimer);
+      clearTimeout(waitingTimer);
       es?.close();
-      mockSub?.unsubscribe();
     },
   };
 }

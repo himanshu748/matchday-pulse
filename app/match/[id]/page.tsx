@@ -5,13 +5,30 @@ import BigMomentCard from "@/components/BigMomentCard";
 import LivePulse from "@/components/LivePulse";
 import CardGallery from "@/components/CardGallery";
 import Celebration from "@/components/Celebration";
-import { subscribeToMatchFeed, type FeedMode } from "@/lib/feed";
-import type { MatchEvent } from "@/lib/types";
+import { subscribeToMatchFeed, isRealFixtureId, type FeedMode } from "@/lib/feed";
+import type { Fixture, MatchEvent } from "@/lib/types";
 
 const MAX_FEED_LENGTH = 25;
 /** Events arriving within this window after subscribe are replayed history — don't celebrate them. */
 const SEED_WINDOW_MS = 2500;
 const CELEBRATED_TYPES = new Set(["goal", "red_card", "penalty", "fulltime"]);
+
+function useCountdown(targetMs: number | null): string | null {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!targetMs) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [targetMs]);
+  if (!targetMs) return null;
+  const diff = targetMs - now;
+  if (diff <= 0) return null;
+  const d = Math.floor(diff / 86_400_000);
+  const h = Math.floor((diff % 86_400_000) / 3_600_000);
+  const m = Math.floor((diff % 3_600_000) / 60_000);
+  const s = Math.floor((diff % 60_000) / 1000);
+  return d > 0 ? `${d}d ${h}h ${m}m` : `${h}h ${m}m ${s}s`;
+}
 
 export default function MatchPage({
   params,
@@ -29,7 +46,21 @@ export default function MatchPage({
   const [events, setEvents] = useState<MatchEvent[]>([]);
   const [mode, setMode] = useState<FeedMode>("connecting");
   const [celebrate, setCelebrate] = useState<MatchEvent | null>(null);
+  const [fixture, setFixture] = useState<Fixture | null>(null);
   const subscribedAt = useRef(0);
+
+  // Real fixture context (team names + kickoff time) straight from TxLINE,
+  // available even before the first event arrives.
+  useEffect(() => {
+    if (!isRealFixtureId(matchId)) return;
+    fetch("/api/fixtures")
+      .then((r) => r.json())
+      .then((d: { fixtures: Fixture[] }) => {
+        const f = d.fixtures?.find((x) => x.fixtureId === matchId);
+        if (f) setFixture(f);
+      })
+      .catch(() => {});
+  }, [matchId]);
 
   useEffect(() => {
     setEvents([]);
@@ -62,14 +93,24 @@ export default function MatchPage({
 
   const latest = events[0];
   const latestScore = latest?.score;
-  const homeTeam = latest?.homeTeam;
-  const awayTeam = latest?.awayTeam;
+  const homeTeam = latest?.homeTeam ?? fixture?.homeTeam;
+  const awayTeam = latest?.awayTeam ?? fixture?.awayTeam;
+
+  const kickoffMs = fixture?.startTimeMs ?? null;
+  const countdown = useCountdown(kickoffMs);
+  const notStarted = countdown != null;
 
   const badge =
     mode === "txline"
       ? { text: "Live · TxLINE", cls: "border-pulse/40 text-pulse", dot: "bg-pulse" }
       : mode === "mock"
-      ? { text: "Live · demo feed", cls: "border-amber-400/40 text-amber-300", dot: "bg-amber-400" }
+      ? { text: "Practice · simulated", cls: "border-amber-400/40 text-amber-300", dot: "bg-amber-400" }
+      : mode === "waiting"
+      ? notStarted
+        ? { text: "Kickoff soon · TxLINE", cls: "border-sky-400/40 text-sky-300", dot: "bg-sky-400" }
+        : { text: "Standby · TxLINE", cls: "border-sky-400/40 text-sky-300", dot: "bg-sky-400" }
+      : mode === "error"
+      ? { text: "Feed unavailable", cls: "border-red-400/40 text-red-300", dot: "bg-red-400" }
       : { text: "Connecting…", cls: "border-white/20 text-slate-400", dot: "bg-slate-500" };
 
   return (
@@ -79,7 +120,7 @@ export default function MatchPage({
         <div className="mb-4 flex items-center justify-between">
           <div>
             <p className="text-xs uppercase tracking-widest text-slate-400">
-              Live match
+              {notStarted ? "Upcoming match" : "Live match"}
             </p>
             <h1 className="text-2xl font-bold">
               {homeTeam && awayTeam ? `${homeTeam} vs ${awayTeam}` : `Match ${matchId}`}
@@ -109,12 +150,37 @@ export default function MatchPage({
           </div>
         )}
 
+        {/* Honest pre-kickoff state — real fixture, no events yet, no fakery. */}
+        {events.length === 0 && notStarted && (
+          <div className="rounded-2xl border border-sky-400/20 bg-pitch-900/60 p-8 text-center">
+            <p className="text-xs uppercase tracking-widest text-sky-300">
+              Kickoff in
+            </p>
+            <p className="mt-2 font-mono text-4xl font-bold text-white">
+              {countdown}
+            </p>
+            <p className="mt-3 text-sm text-slate-400">
+              {new Date(kickoffMs!).toLocaleString(undefined, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}{" "}
+              — Big Moments will stream in live from TxLINE the second the
+              match starts. Keep this page open.
+            </p>
+          </div>
+        )}
+
         <div className="flex flex-col gap-3">
-          {events.length === 0 && (
+          {events.length === 0 && !notStarted && (
             <p className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-slate-500">
               {mode === "connecting"
                 ? "Connecting to the live feed…"
-                : "Waiting for the first Big Moment…"}
+                : mode === "error"
+                ? "The live feed is unreachable right now — refresh to retry."
+                : "Standing by on the live TxLINE stream — no Big Moments reported yet."}
             </p>
           )}
           {events.map((event, i) => (
@@ -128,20 +194,19 @@ export default function MatchPage({
         <div className="rounded-2xl border border-white/10 bg-pitch-900/60 p-4 text-xs text-slate-400">
           <p className="font-semibold text-slate-200">About this feed</p>
           <p className="mt-1">
-            {mode === "txline" ? (
+            {mode === "mock" ? (
               <>
-                Events are streamed live from the{" "}
-                <span className="text-pulse">TxLINE</span> World Cup feed and are
-                cryptographically verifiable on Solana.
-              </>
-            ) : mode === "mock" ? (
-              <>
-                Showing the built-in <span className="text-amber-300">demo feed</span>{" "}
-                (no live TxLINE fixture for this id). Open a real fixture from the
-                home page to see the live TxLINE stream.
+                This is the labeled <span className="text-amber-300">practice feed</span>{" "}
+                (simulated events for trying the app). Every real fixture page
+                streams only genuine TxLINE data.
               </>
             ) : (
-              "Connecting…"
+              <>
+                Events stream live from the{" "}
+                <span className="text-pulse">TxLINE</span> World Cup feed and are
+                cryptographically verifiable on Solana. Nothing on this page is
+                simulated.
+              </>
             )}
           </p>
         </div>

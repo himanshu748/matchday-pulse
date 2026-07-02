@@ -192,12 +192,12 @@ export default function HomePage() {
             className="flex items-center justify-between rounded-2xl border border-amber-400/30 bg-pitch-900/60 p-4 transition hover:border-amber-400/60"
           >
             <div>
-              <p className="font-semibold text-white">Demo match</p>
+              <p className="font-semibold text-white">Practice match</p>
               <p className="text-xs text-slate-500">
-                Simulated feed — {data.configured ? "no live fixtures right now" : "TxLINE credentials not set"}
+                Clearly-labeled simulated feed — {data.configured ? "no fixtures available right now" : "TxLINE credentials not set"}
               </p>
             </div>
-            <span className="text-xs text-amber-300">Watch demo →</span>
+            <span className="text-xs text-amber-300">Try practice →</span>
           </Link>
         )}
       </section>
