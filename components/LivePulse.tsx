@@ -5,11 +5,10 @@ import { useEffect, useRef, useState } from "react";
 /**
  * LivePulse
  * ---------------------------------------------------------------------------
- * A simple animated "hype meter" that ticks up whenever `pulseValue`
- * increases (driven by incoming match events in the parent page). This is
- * a purely client-side, in-memory visualization — the real product spec
- * calls for aggregating actual fan taps/reactions server-side (see README
- * "what needs to be wired in next").
+ * An animated "hype meter" that spikes when `pulseValue` increases — driven by
+ * incoming match events AND by fans smashing the Hype button. Tap bursts feed
+ * the same meter, so the crowd literally moves the chart. (Server-side
+ * aggregation across all fans is the natural next step — see README.)
  */
 interface LivePulseProps {
   /** Monotonically-increasing counter; each increase triggers a pulse tick. */
@@ -23,35 +22,43 @@ export default function LivePulse({ pulseValue }: LivePulseProps) {
     Array(HISTORY_LENGTH).fill(0)
   );
   const [flash, setFlash] = useState(false);
+  const [hype, setHype] = useState(0);
+  const [tapAnim, setTapAnim] = useState(0);
   const prevValue = useRef(pulseValue);
 
-  useEffect(() => {
-    if (pulseValue === prevValue.current) return;
+  const total = pulseValue + hype;
 
-    const delta = pulseValue - prevValue.current;
-    prevValue.current = pulseValue;
+  useEffect(() => {
+    if (total === prevValue.current) return;
+
+    const delta = total - prevValue.current;
+    prevValue.current = total;
 
     setHistory((prev) => {
       const spike = Math.min(100, 30 + delta * 25 + Math.random() * 15);
-      const next = [...prev.slice(1), spike];
-      return next;
+      return [...prev.slice(1), spike];
     });
 
     setFlash(true);
     const t = setTimeout(() => setFlash(false), 350);
     return () => clearTimeout(t);
-  }, [pulseValue]);
+  }, [total]);
 
   // Gentle idle decay so the bar chart doesn't look frozen between events.
   useEffect(() => {
     const decay = setInterval(() => {
-      setHistory((prev) => {
-        const next = [...prev.slice(1), Math.max(4, prev[prev.length - 1] * 0.85)];
-        return next;
-      });
+      setHistory((prev) => [
+        ...prev.slice(1),
+        Math.max(4, prev[prev.length - 1] * 0.85),
+      ]);
     }, 1200);
     return () => clearInterval(decay);
   }, []);
+
+  function handleHype() {
+    setHype((h) => h + 1);
+    setTapAnim((k) => k + 1);
+  }
 
   return (
     <div className="rounded-2xl border border-white/10 bg-pitch-900/60 p-4">
@@ -70,7 +77,7 @@ export default function LivePulse({ pulseValue }: LivePulseProps) {
             flash ? "text-pulse" : ""
           }`}
         >
-          {pulseValue} events
+          {total} hype
         </span>
       </div>
 
@@ -83,6 +90,19 @@ export default function LivePulse({ pulseValue }: LivePulseProps) {
           />
         ))}
       </div>
+
+      <button
+        key={tapAnim}
+        onClick={handleHype}
+        className={`mt-3 w-full rounded-xl border border-pulse/40 bg-pulse/10 py-2.5 text-sm font-extrabold tracking-wide text-pulse transition hover:bg-pulse/20 active:scale-95 ${
+          tapAnim ? "animate-hype-tap" : ""
+        }`}
+      >
+        🔥 SEND HYPE
+      </button>
+      <p className="mt-1.5 text-center text-[10px] text-slate-500">
+        Smash it when the match gets spicy — your taps move the meter.
+      </p>
     </div>
   );
 }

@@ -9,6 +9,7 @@
 
 import { NextResponse } from "next/server";
 import { decodeCard, EVENT_LABEL } from "@/lib/cardMeta";
+import { computeRarity, RARITY_META } from "@/lib/rarity";
 
 export const runtime = "nodejs";
 
@@ -37,6 +38,7 @@ export async function GET(
     image: `${appUrl()}/api/card-image/${params.id}`,
     external_url: `${appUrl()}/match/${d.fx}`,
     attributes: [
+      { trait_type: "Rarity", value: RARITY_META[computeRarity(d.t, d.m)].label },
       { trait_type: "Moment", value: label },
       { trait_type: "Team", value: d.tm },
       { trait_type: "Minute", value: d.m },

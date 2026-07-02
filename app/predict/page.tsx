@@ -142,8 +142,13 @@ export default function PredictPage() {
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <StatBox label="Your score" value={score} />
-          <StatBox label="Current streak" value={streak} />
+          <StatBox label="Your score" value={score} suffix=" pts" />
+          <StatBox
+            label="Current streak"
+            value={streak}
+            suffix={streak >= 2 ? " 🔥".repeat(Math.min(streak, 3)) : ""}
+            highlight={streak >= 2}
+          />
         </div>
       </div>
 
@@ -184,13 +189,33 @@ export default function PredictPage() {
   );
 }
 
-function StatBox({ label, value }: { label: string; value: number }) {
+function StatBox({
+  label,
+  value,
+  suffix = "",
+  highlight = false,
+}: {
+  label: string;
+  value: number;
+  suffix?: string;
+  highlight?: boolean;
+}) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-pitch-900/60 p-4 text-center">
-      <p className="text-xs uppercase tracking-wide text-slate-400">
-        {label}
+    <div
+      className={`rounded-2xl border bg-pitch-900/60 p-4 text-center ${
+        highlight
+          ? "border-amber-400/50 shadow-[0_0_20px_1px_rgba(251,191,36,0.25)]"
+          : "border-white/10"
+      }`}
+    >
+      <p className="text-xs uppercase tracking-wide text-slate-400">{label}</p>
+      <p
+        key={value}
+        className="mt-1 animate-score-pop font-mono text-2xl font-bold text-white"
+      >
+        {value}
+        {suffix}
       </p>
-      <p className="mt-1 font-mono text-2xl font-bold text-white">{value}</p>
     </div>
   );
 }

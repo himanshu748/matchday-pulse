@@ -1,13 +1,17 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import BigMomentCard from "@/components/BigMomentCard";
 import LivePulse from "@/components/LivePulse";
 import CardGallery from "@/components/CardGallery";
+import Celebration from "@/components/Celebration";
 import { subscribeToMatchFeed, type FeedMode } from "@/lib/feed";
 import type { MatchEvent } from "@/lib/types";
 
 const MAX_FEED_LENGTH = 25;
+/** Events arriving within this window after subscribe are replayed history — don't celebrate them. */
+const SEED_WINDOW_MS = 2500;
+const CELEBRATED_TYPES = new Set(["goal", "red_card", "penalty", "fulltime"]);
 
 export default function MatchPage({
   params,
@@ -24,16 +28,27 @@ export default function MatchPage({
 
   const [events, setEvents] = useState<MatchEvent[]>([]);
   const [mode, setMode] = useState<FeedMode>("connecting");
+  const [celebrate, setCelebrate] = useState<MatchEvent | null>(null);
+  const subscribedAt = useRef(0);
 
   useEffect(() => {
     setEvents([]);
     setMode("connecting");
+    setCelebrate(null);
+    subscribedAt.current = Date.now();
 
     const subscription = subscribeToMatchFeed(
       matchId,
       (event) => {
         setEvents((prev) => {
           if (prev.some((e) => e.id === event.id)) return prev;
+          // Celebrate moments that land live (after the seeded history replay).
+          if (
+            Date.now() - subscribedAt.current > SEED_WINDOW_MS &&
+            CELEBRATED_TYPES.has(event.type)
+          ) {
+            setCelebrate(event);
+          }
           return [event, ...prev].slice(0, MAX_FEED_LENGTH);
         });
       },
@@ -59,6 +74,7 @@ export default function MatchPage({
 
   return (
     <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+      <Celebration event={celebrate} />
       <div>
         <div className="mb-4 flex items-center justify-between">
           <div>
@@ -79,9 +95,17 @@ export default function MatchPage({
 
         {latestScore && (
           <div className="mb-4 rounded-2xl border border-white/10 bg-pitch-900/60 p-4 text-center">
-            <p className="font-mono text-4xl font-bold">
+            <p
+              key={`${latestScore.home}-${latestScore.away}`}
+              className="animate-score-pop font-mono text-4xl font-bold"
+            >
               {latestScore.home} &ndash; {latestScore.away}
             </p>
+            {homeTeam && awayTeam && (
+              <p className="mt-1 text-xs uppercase tracking-widest text-slate-500">
+                {homeTeam} · {awayTeam}
+              </p>
+            )}
           </div>
         )}
 

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import type { MatchEvent, MatchEventType, VerificationResult } from "@/lib/types";
 import { mintCard, type MintCardResult } from "@/lib/mintCard";
+import { computeRarity, RARITY_META } from "@/lib/rarity";
 
 const EVENT_META: Record<
   MatchEventType,
@@ -40,6 +41,14 @@ export default function BigMomentCard({ event, isNew }: BigMomentCardProps) {
   const meta = EVENT_META[event.type];
   const teamColor = meta.color;
   const verifiable = event.source === "txline" && event.seq != null;
+  const rarity = computeRarity(event.type, event.minute);
+  const rarityMeta = RARITY_META[rarity];
+
+  const shareText = encodeURIComponent(
+    `${meta.icon} ${meta.label} — ${event.team} ${event.minute}'` +
+      (event.score ? ` (${event.score.home}-${event.score.away})` : "") +
+      ` · caught live on Matchday Pulse, verifiable on @solana #WorldCup`
+  );
 
   // Fetch the on-chain Merkle-proof verification for real TxLINE moments.
   useEffect(() => {
@@ -83,10 +92,9 @@ export default function BigMomentCard({ event, isNew }: BigMomentCardProps) {
 
   return (
     <div
-      className={`group relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br ${meta.accent} to-pitch-900 p-4 shadow-lg ${
+      className={`group relative overflow-hidden rounded-2xl border bg-gradient-to-br ${meta.accent} to-pitch-900 p-4 shadow-lg ${rarityMeta.ring} ${rarityMeta.glow} ${
         isNew ? "animate-slide-in" : ""
       }`}
-      style={{ borderColor: `${teamColor}33` }}
     >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2">
@@ -100,8 +108,22 @@ export default function BigMomentCard({ event, isNew }: BigMomentCardProps) {
             </p>
           </div>
         </div>
-        <div className="rounded-full bg-black/30 px-2.5 py-1 text-xs font-mono text-slate-200">
-          {event.minute}&apos;
+        <div className="flex items-center gap-1.5">
+          {rarity !== "common" && (
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-extrabold tracking-widest"
+              style={{
+                color: rarityMeta.color,
+                background: `${rarityMeta.color}1a`,
+                border: `1px solid ${rarityMeta.color}55`,
+              }}
+            >
+              {rarityMeta.label}
+            </span>
+          )}
+          <div className="rounded-full bg-black/30 px-2.5 py-1 text-xs font-mono text-slate-200">
+            {event.minute}&apos;
+          </div>
         </div>
       </div>
 
@@ -117,21 +139,32 @@ export default function BigMomentCard({ event, isNew }: BigMomentCardProps) {
           )}
         </div>
 
-        <button
-          onClick={handleMint}
-          disabled={!publicKey || mintState === "minting" || mintState === "minted"}
-          className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-          title={
-            publicKey
-              ? "Mint this moment as a compressed NFT (gas-free)"
-              : "Connect a wallet to mint"
-          }
-        >
-          {mintState === "idle" && "Mint card"}
-          {mintState === "minting" && "Minting…"}
-          {mintState === "minted" && "Minted ✓"}
-          {mintState === "error" && "Retry mint"}
-        </button>
+        <div className="flex items-center gap-1.5">
+          <a
+            href={`https://twitter.com/intent/tweet?text=${shareText}`}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-full border border-white/20 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-100 transition hover:bg-white/10"
+            title="Share this moment"
+          >
+            Share
+          </a>
+          <button
+            onClick={handleMint}
+            disabled={!publicKey || mintState === "minting" || mintState === "minted"}
+            className="rounded-full border border-pulse/40 bg-pulse/10 px-3 py-1.5 text-xs font-semibold text-pulse transition hover:bg-pulse/20 disabled:cursor-not-allowed disabled:opacity-50"
+            title={
+              publicKey
+                ? "Mint this moment as a compressed NFT (gas-free)"
+                : "Connect a wallet to mint"
+            }
+          >
+            {mintState === "idle" && "Mint card"}
+            {mintState === "minting" && "Minting…"}
+            {mintState === "minted" && "Minted ✓"}
+            {mintState === "error" && "Retry mint"}
+          </button>
+        </div>
       </div>
 
       {/* On-chain verification badge — the trust signal for fans. */}
