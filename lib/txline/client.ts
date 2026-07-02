@@ -46,6 +46,16 @@ export function worldCupCompetitionId(): number | undefined {
   return v ? Number(v) : undefined;
 }
 
+/**
+ * The snapshot endpoint returns fixtures starting AT or within 30 days AFTER
+ * the given epoch day — so recently *played* matches vanish if we default to
+ * today. Look back a few days so finished fixtures keep their team names and
+ * stay replayable.
+ */
+function defaultStartEpochDay(): number {
+  return Math.floor(Date.now() / 86_400_000) - 3;
+}
+
 interface RawFixture {
   Ts: number;
   StartTime: number;
@@ -83,8 +93,10 @@ export async function fetchFixtures(opts?: {
   const url = new URL(`${API_BASE}/fixtures/snapshot`);
   const comp = opts?.competitionId ?? worldCupCompetitionId();
   if (comp != null) url.searchParams.set("competitionId", String(comp));
-  if (opts?.startEpochDay != null)
-    url.searchParams.set("startEpochDay", String(opts.startEpochDay));
+  url.searchParams.set(
+    "startEpochDay",
+    String(opts?.startEpochDay ?? defaultStartEpochDay())
+  );
 
   const res = await fetch(url, { headers: authHeaders(creds), cache: "no-store" });
   if (!res.ok) throw new Error(`fixtures ${res.status}: ${await res.text()}`);
@@ -99,6 +111,7 @@ export async function fetchRawFixtures(competitionId?: number): Promise<RawFixtu
   const url = new URL(`${API_BASE}/fixtures/snapshot`);
   const comp = competitionId ?? worldCupCompetitionId();
   if (comp != null) url.searchParams.set("competitionId", String(comp));
+  url.searchParams.set("startEpochDay", String(defaultStartEpochDay()));
   const res = await fetch(url, { headers: authHeaders(creds), cache: "no-store" });
   if (!res.ok) throw new Error(`fixtures ${res.status}: ${await res.text()}`);
   return (await res.json()) as RawFixture[];
